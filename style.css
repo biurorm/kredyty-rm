@@ -185,7 +185,8 @@ input:focus, select:focus { outline: 2px solid var(--brand-light); outline-offse
   .druk-podsum { display: flex; gap: 18px; margin: 10px 0 4px; font-size: 10.5pt; }
   .druk-podsum b { font-size: 13pt; display: block; }
 }
-#btn-raport { margin: 0 0 12px; }
+#btn-raport { margin: 0 0 12px; gap: 8px; }
+#btn-raport .btn { margin: 0; font-size: 15px; }
 .rap-tab { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
 .rap-tab td { border-bottom: 1px solid var(--border); padding: 6px 4px; vertical-align: top; }
 .rap-tab .r { text-align: right; white-space: nowrap; }

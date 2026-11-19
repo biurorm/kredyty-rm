@@ -1,7 +1,7 @@
 // KREDYTY RM: klienci przekazani przez RM doradcom kredytowym (od v4 osobno Natalia i Jarek) + raport do druku/Excela
 // oraz kampanie reklamowe na kredyt (miejsce, zdjęcie, termin, budżet, zapytania).
 // Dane w bazie Zadań RM (Supabase, to samo logowanie). Bez config.js albo z ?proba: tryb próbny w tej przeglądarce.
-const WERSJA = 'v4';
+const WERSJA = 'v5';
 
 // rozliczenie: RM dostaje udział w prowizji doradcy; stawkę (np. 1,5 / 2 / 3% kwoty kredytu) podaje doradca.
 // Stawka w % siedzi w kolumnie prowizja_rm. Natalia 50% (ustalone 19.11.2026), Jarek: warunki do wpisania (null = nie liczymy).
@@ -240,7 +240,8 @@ $('#tabs').addEventListener('click', (e) => { const b = e.target.closest('button
 function rysujKlientow() {
   const md = mojDoradca(); if (md) S.doradca = md;
   $('#doradcy').innerHTML = md ? '' : Object.values(DORADCY).map(d => `<button class="chip${S.doradca === d.kto ? ' on' : ''}" data-doradca="${d.kto}">💼 ${d.kto} · ${S.klienci.filter(k => (k.doradca || 'Natalia') === d.kto).length}</button>`).join('');
-  $('#btn-raport').textContent = `📄 Raport dla ${DS().kogo}`;
+  $('#btn-raport').innerHTML = Object.values(DORADCY).filter(d => !md || d.kto === md)
+    .map(d => `<button class="btn btn-ghost" data-raport="${d.kto}">📄 Raport dla ${d.kogo}</button>`).join('');
   const K = mojiKlienci(), rok = dzis().slice(0, 4);
   const wToku = K.filter(k => !zamkniety(k)), zamk = K.filter(zamkniety);
   const sumaKredytow = K.filter(k => k.kredyt === 'Tak').reduce((s, k) => s + Number(k.kwota || 0), 0);
@@ -564,7 +565,11 @@ async function kopiujRaport() {
     '', `Razem: ${R.L.length} klientów, kredyty ${zl(R.sumaKredytow)}, ${DS().udzial ? `dla RM (${udzTxt(DS())} prowizji) ${zl(R.rm)}, z tego do zapłaty ${zl(R.doZap)}` : 'udział RM do ustalenia'}.`].join('\n');
   try { await navigator.clipboard.writeText(t); toast('Skopiowane, wklej w maila lub SMS'); } catch (e) { toast('Nie udało się skopiować', 4000); }
 }
-$('#btn-raport').addEventListener('click', otworzRaport);
+$('#btn-raport').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-raport]'); if (!b) return;
+  S.doradca = b.dataset.raport; try { localStorage.setItem('kr-doradca', S.doradca); } catch (er) {}
+  rysujKlientow(); otworzRaport();
+});
 
 // ===================== KARTA: wspólne zdarzenia =====================
 function otworzArkusz() { $('#tlo').hidden = false; $('#arkusz').hidden = false; document.body.style.overflow = 'hidden'; }
