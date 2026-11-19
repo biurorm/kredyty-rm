@@ -1,0 +1,17 @@
+{
+  "name": "Kredyty, RM Nieruchomości",
+  "short_name": "Kredyty RM",
+  "description": "Współpraca z doradcą kredytowym: klienci dla Natalii od RM i kampanie reklamowe na kredyt",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f5f4",
+  "theme_color": "#094d47",
+  "lang": "pl",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
