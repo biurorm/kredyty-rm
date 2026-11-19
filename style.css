@@ -161,7 +161,7 @@ input:focus, select:focus { outline: 2px solid var(--brand-light); outline-offse
 /* WYDRUK: A4, czarno-biało, kratki do odhaczania długopisem */
 #druk { display: none; }
 @media print {
-  @page { size: A4; margin: 14mm 16mm; }
+  @page { size: A4 landscape; margin: 10mm 12mm; }
   body { background: #fff; }
   .app { display: none !important; }
   #druk { display: block; color: #000; font-size: 13pt; }
@@ -246,3 +246,11 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
   .kafle4 { grid-template-columns: repeat(2, 1fr); }
 }
 .mini-pole { width: 90px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 14px; font-family: inherit; }
+.potw { font-size: 14px; padding: 8px 12px; border-radius: 10px; background: #fef3c7; color: #92400e; margin: 6px 0; }
+.potw.ok { background: var(--ok-soft); color: var(--ok); }
+.historia { margin: 12px 0; font-size: 14px; }
+.historia summary { cursor: pointer; color: var(--brand); font-weight: 600; }
+.hist { list-style: none; padding: 0; margin: 8px 0 0; }
+.hist li { padding: 6px 0; border-bottom: 1px solid var(--border); }
+.czerwony-txt { color: var(--late); }
+.ok-txt { color: var(--ok); }
