@@ -177,7 +177,19 @@ input:focus, select:focus { outline: 2px solid var(--brand-light); outline-offse
   #druk tr { break-inside: avoid; }
   .druk-stopka { margin-top: 22px; font-size: 12pt; }
   .druk-nota { margin-top: 8px; font-size: 9pt; color: #666; }
+  #druk.raport { font-size: 9.5pt; }
+  #druk.raport th { text-align: left; font-size: 8.5pt; color: #444; border-bottom: 1.5px solid #000; padding: 4px; }
+  #druk.raport td { padding: 5px 4px; }
+  #druk.raport .r { text-align: right; white-space: nowrap; }
+  #druk.raport tfoot td { border-top: 1.5px solid #000; border-bottom: 0; font-weight: 700; }
+  .druk-podsum { display: flex; gap: 18px; margin: 10px 0 4px; font-size: 10.5pt; }
+  .druk-podsum b { font-size: 13pt; display: block; }
 }
+#btn-raport { margin: 0 0 12px; }
+.rap-tab { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+.rap-tab td { border-bottom: 1px solid var(--border); padding: 6px 4px; vertical-align: top; }
+.rap-tab .r { text-align: right; white-space: nowrap; }
+.rap-tab tfoot td { font-weight: 700; border-bottom: 0; }
 
 @media (max-width: 380px) {
   .tabs button { font-size: 13px; }
@@ -233,3 +245,4 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 @media (max-width: 480px) {
   .kafle4 { grid-template-columns: repeat(2, 1fr); }
 }
+.mini-pole { width: 90px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 14px; font-family: inherit; }

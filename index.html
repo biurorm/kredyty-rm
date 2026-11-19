@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="style.css?v=1">
+  <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 <div class="app">
@@ -51,6 +51,7 @@
   <!-- KLIENCI DLA NATALII OD RM -->
   <section class="screen" id="ekran-klienci" hidden>
     <div id="klienci-kafle"></div>
+    <button class="btn btn-ghost" id="btn-raport">📄 Raport dla Natalii</button>
     <input type="search" id="szukaj" class="szukaj" placeholder="Szukaj: klient, nieruchomość" autocomplete="off">
     <div class="chips" id="klienci-filtry"></div>
     <div id="klienci-lista"></div>
@@ -82,9 +83,10 @@
   <input type="file" id="plik-zdjecie" accept="image/*" multiple hidden>
   <div class="toast" id="toast" hidden></div>
 </div>
+<div id="druk"></div>
 
 <script src="config.js?v=2"></script>
 <script src="vendor/supabase.js"></script>
-<script src="app.js?v=1"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>

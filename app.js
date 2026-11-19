@@ -1,11 +1,12 @@
-// KREDYTY RM: współpraca z doradcą kredytowym (Natalia). Klienci dla Natalii od RM (i od Natalii do RM)
+// KREDYTY RM: współpraca z doradcą kredytowym (Natalia). Klienci dla Natalii od RM (od v2 tylko ten kierunek) + raport do druku/Excela
 // oraz kampanie reklamowe na kredyt (miejsce, zdjęcie, termin, budżet, zapytania).
 // Dane w bazie Zadań RM (Supabase, to samo logowanie). Bez config.js albo z ?proba: tryb próbny w tej przeglądarce.
-const WERSJA = 'v1';
+const WERSJA = 'v2';
 
-// rozliczenie wg warunków z maila do Natalii z 20.10.2026 (umowa jeszcze niepodpisana, do zmiany tutaj)
-const STAWKA = { A: 0.01, B: 0.008 };      // RM od kwoty kredytu (brutto): A klient transakcji RM, B klient z marki RM
-const DLA_NATALII = 0.10;                   // Natalia od prowizji RM netto za poleconą nieruchomość / klienta
+// rozliczenie od 19.11.2026: RM dostaje 50% prowizji Natalii; stawkę Natalii (np. 1,5 / 2 / 3% kwoty kredytu) podaje Natalia.
+// Stawka w % siedzi w kolumnie prowizja_rm (bez zmiany bazy).
+const UDZIAL_RM = 0.5;
+const STAWKI = [1.5, 2, 3];
 const KREDYT = ['W trakcie', 'Tak', 'Nie', 'Bez kredytu'];
 const MIEJSCA = ['Facebook / Instagram', 'Google', 'Strona www', 'Otodom / OLX', 'Baner', 'Witryna biura', 'Ulotki', 'Prasa / radio'];
 const K_STATUS = { plan: 'Plan', aktywna: 'Aktywna', zakonczona: 'Zakończona' };
@@ -102,8 +103,8 @@ function magazynProbny() {
   const osoby = [{ id: 'ja', imie: 'Rafał (próba)', rola: 'admin', aktywny: true }, { id: 'natalia', imie: 'Natalia', rola: 'doradca', aktywny: true }];
   // dane przykładowe, nieprawdziwe
   if (!czytaj('kr-proba-klienci', null)) pisz('kr-proba-klienci', [
-    { id: 'k1', data: '2026-11-05', od_kogo: 'Biuro', klient: 'Klient A', telefon: '', nieruchomosc: 'Mieszkanie, ul. Przykładowa', zdolnosc: 'Tak', kredyt: 'Tak', kwota: 350000, zamkniecie: '2026-12-20', grupa: 'A', prowizja_rm: null, notatka: '', utworzyl: 'ja', zmieniono: new Date().toISOString() },
-    { id: 'k2', data: '2026-11-12', od_kogo: 'Natalia', klient: 'Klient B', telefon: '', nieruchomosc: 'Dom, Przykładowo 1', zdolnosc: 'Tak', kredyt: 'W trakcie', kwota: null, zamkniecie: null, grupa: '', prowizja_rm: 12000, notatka: '', utworzyl: 'natalia', zmieniono: new Date().toISOString() }
+    { id: 'k1', data: '2026-11-05', od_kogo: 'Biuro', klient: 'Klient A', telefon: '', nieruchomosc: 'Mieszkanie, ul. Przykładowa', zdolnosc: 'Tak', kredyt: 'Tak', kwota: 350000, zamkniecie: '2026-12-20', grupa: '', prowizja_rm: 2, notatka: '', utworzyl: 'ja', zmieniono: new Date().toISOString() },
+    { id: 'k2', data: '2026-11-12', od_kogo: 'Biuro', klient: 'Klient B', telefon: '', nieruchomosc: 'Dom, Przykładowo 1', zdolnosc: 'Tak', kredyt: 'W trakcie', kwota: null, zamkniecie: null, grupa: '', prowizja_rm: null, notatka: '', utworzyl: 'natalia', zmieniono: new Date().toISOString() }
   ]);
   const K = () => czytaj('kr-proba-klienci', []), M = () => czytaj('kr-proba-kampanie', []), Z = () => czytaj('kr-proba-zdjecia', {});
   return {
@@ -133,15 +134,15 @@ const cfg = window.RM_CONFIG || {};
 const DB = (cfg.supabaseUrl && !/[?&]proba/.test(location.search)) ? magazynSupabase(cfg) : magazynProbny();
 
 // ===================== STAN =====================
-const S = { user: null, profil: null, osoby: [], klienci: [], kampanie: [], filtr: 'w_toku', odKogo: '', szukaj: '', filtrKamp: '', otwarty: null, f: null, urle: {} };
+const S = { user: null, profil: null, osoby: [], klienci: [], kampanie: [], filtr: 'w_toku', okres: 'miesiac', rapOd: '', rapDo: '', szukaj: '', filtrKamp: '', otwarty: null, f: null, urle: {} };
 const rola = () => S.profil?.rola;
 const admin = () => rola() === 'admin';
 const mogeKampanie = () => ['admin', 'asystentka', 'doradca'].includes(rola());
 const imie = (id) => (S.osoby.find(o => o.id === id)?.imie) || 'ktoś z zespołu';
 const zamkniety = (k) => !!k.zamkniecie;
-// ile RM dostaje od Natalii za klienta (1% / 0,8% kwoty kredytu) i ile Natalia od RM (10% prowizji RM netto)
-const dlaRM = (k) => k.od_kogo === 'Biuro' && k.kredyt === 'Tak' && k.kwota ? Number(k.kwota) * (STAWKA[k.grupa] ?? STAWKA.A) : 0;
-const dlaNatalii = (k) => k.od_kogo === 'Natalia' && zamkniety(k) && k.prowizja_rm ? Number(k.prowizja_rm) * DLA_NATALII : 0;
+const prowNatalii = (k) => k.kredyt === 'Tak' && k.kwota && k.prowizja_rm ? Number(k.kwota) * Number(k.prowizja_rm) / 100 : 0;
+const dlaRM = (k) => prowNatalii(k) * UDZIAL_RM;
+const procTxt = (v) => String(v).replace('.', ',') + '%';
 
 // ===================== START =====================
 async function start() {
@@ -206,42 +207,37 @@ function rysujKlientow() {
   const K = S.klienci, rok = dzis().slice(0, 4);
   const wToku = K.filter(k => !zamkniety(k)), zamk = K.filter(zamkniety);
   const sumaKredytow = K.filter(k => k.kredyt === 'Tak').reduce((s, k) => s + Number(k.kwota || 0), 0);
-  const rm = K.reduce((s, k) => s + dlaRM(k), 0), nat = K.reduce((s, k) => s + dlaNatalii(k), 0);
+  const rm = K.reduce((s, k) => s + dlaRM(k), 0);
   $('#klienci-kafle').innerHTML = `<div class="kafle kafle4">
     <div class="kafel"><b>${wToku.length}</b><span>w toku</span></div>
     <div class="kafel"><b>${zamk.filter(k => k.zamkniecie.startsWith(rok)).length}</b><span>zamknięte ${rok}</span></div>
     <div class="kafel"><b>${zl(sumaKredytow)}</b><span>kredyty udzielone</span></div>
     <div class="kafel"><b>${zl(rm)}</b><span>dla RM od Natalii</span></div>
-  </div>${nat ? `<div class="small muted srodek">Dla Natalii od RM (10% prowizji RM netto): <b>${zl(nat)}</b></div>` : ''}`;
+  </div>`;
 
   const ile = (f) => K.filter(f).length;
-  const zOd = (k) => !S.odKogo || k.od_kogo === S.odKogo;
   $('#klienci-filtry').innerHTML = [['w_toku', 'W toku', k => !zamkniety(k)], ['zamkniete', 'Zamknięte', zamkniety], ['wszystkie', 'Wszyscy', () => true]]
-    .map(([k, n, f]) => `<button class="chip${S.filtr === k ? ' on' : ''}" data-filtr="${k}">${n} · ${ile(x => f(x) && zOd(x))}</button>`).join('')
-    + '<span class="chips-sep"></span>'
-    + [['', 'Wszyscy'], ['Biuro', 'Od RM dla Natalii'], ['Natalia', 'Od Natalii dla RM']]
-      .map(([k, n]) => `<button class="chip chip-mala${S.odKogo === k ? ' on' : ''}" data-od="${k}">${n}</button>`).join('');
+    .map(([k, n, f]) => `<button class="chip${S.filtr === k ? ' on' : ''}" data-filtr="${k}">${n} · ${ile(f)}</button>`).join('');
 
   const q = bezOgonkow(S.szukaj);
-  const lista = K.filter(k => S.filtr === 'wszystkie' || (S.filtr === 'zamkniete') === zamkniety(k)).filter(zOd)
+  const lista = K.filter(k => S.filtr === 'wszystkie' || (S.filtr === 'zamkniete') === zamkniety(k))
     .filter(k => !q || bezOgonkow(`${k.klient} ${k.nieruchomosc} ${k.notatka}`).includes(q))
     .sort((a, b) => S.filtr === 'zamkniete' ? b.zamkniecie.localeCompare(a.zamkniecie) : a.data.localeCompare(b.data));
   $('#klienci-lista').innerHTML = lista.length ? lista.map(k => {
     const zd = k.zdolnosc === 'Tak' ? '<span class="tag ok">zdolność ✓</span>' : k.zdolnosc === 'Nie' ? '<span class="tag zle">brak zdolności</span>' : '<span class="tag">zdolność ?</span>';
     const kr = k.kredyt ? `<span class="tag${k.kredyt === 'Tak' ? ' ok' : k.kredyt === 'Nie' ? ' zle' : ''}">kredyt: ${esc(k.kredyt.toLowerCase())}${k.kwota ? ' ' + zl(k.kwota) : ''}</span>` : '';
-    const roz = dlaRM(k) ? `<span class="tag rm">RM: ${zl(dlaRM(k))}</span>` : dlaNatalii(k) ? `<span class="tag rm">Natalia: ${zl(dlaNatalii(k))}</span>` : '';
+    const roz = dlaRM(k) ? `<span class="tag rm">RM: ${zl(dlaRM(k))}</span>` : '';
     return `<button class="klient${zamkniety(k) ? ' zamk' : ''}" data-klient="${k.id}">
-      <div class="row-between"><b class="klient-imie">${esc(k.klient)}</b><span class="od od-${k.od_kogo === 'Biuro' ? 'rm' : 'nat'}">${k.od_kogo === 'Biuro' ? 'od RM' : 'od Natalii'}</span></div>
+      <b class="klient-imie">${esc(k.klient)}</b>
       ${k.nieruchomosc ? `<div class="klient-nier">🏠 ${esc(k.nieruchomosc)}</div>` : ''}
       <div class="tagi">${zd}${kr}${roz}</div>
-      <div class="small muted">${dataPL(k.data)}${zamkniety(k) ? ` · ✅ zamknięte ${dataPL(k.zamkniecie)}` : ' · w toku'}${k.grupa ? ` · grupa ${k.grupa}` : ''}</div>
+      <div class="small muted">${dataPL(k.data)}${zamkniety(k) ? ` · ✅ zamknięte ${dataPL(k.zamkniecie)}` : ' · w toku'}${k.prowizja_rm ? ` · stawka ${procTxt(k.prowizja_rm)}` : ''}</div>
     </button>`;
   }).join('') : `<div class="pusto">${K.length ? 'Nic tu nie pasuje.' : 'Brak klientów. Dodaj pierwszego przyciskiem ＋.'}</div>`;
 }
 $('#klienci-filtry').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.filtr) S.filtr = b.dataset.filtr;
-  if (b.dataset.od !== undefined) S.odKogo = b.dataset.od;
   rysujKlientow();
 });
 $('#szukaj').addEventListener('input', (e) => { S.szukaj = e.target.value; rysujKlientow(); });
@@ -250,7 +246,7 @@ $('#fab-klient').addEventListener('click', () => otworzKlienta(null));
 
 function otworzKlienta(k) {
   S.otwarty = { typ: 'klient', id: k?.id || null };
-  S.f = k ? { ...k } : { data: dzis(), od_kogo: rola() === 'doradca' ? 'Natalia' : 'Biuro', klient: '', telefon: '', nieruchomosc: '', zdolnosc: '', kredyt: '', kwota: null, zamkniecie: null, grupa: 'A', prowizja_rm: null, notatka: '' };
+  S.f = k ? { ...k } : { data: dzis(), od_kogo: 'Biuro', klient: '', telefon: '', nieruchomosc: '', zdolnosc: '', kredyt: '', kwota: null, zamkniecie: null, grupa: '', prowizja_rm: null, notatka: '' };
   rysujKlienta(); otworzArkusz();
   if (!k) setTimeout(() => $('#f-klient')?.focus(), 80);
 }
@@ -259,8 +255,6 @@ function rysujKlienta(usun) {
   const f = S.f, nowy = !S.otwarty.id;
   $('#ark-nr').textContent = nowy ? 'Nowy klient' : (zamkniety(f) ? '✅ Zamknięte' : 'W toku');
   $('#ark-tresc').innerHTML = `<form id="f-kl">
-    <div class="sekcja-tytul">Od kogo</div>
-    <div class="chips">${chipy('od_kogo', [['Biuro', '🏠 Od RM dla Natalii'], ['Natalia', '💼 Od Natalii dla RM']], f.od_kogo)}</div>
     <label>Imię i nazwisko klienta <input type="text" id="f-klient" maxlength="120" value="${esc(f.klient)}" required autocomplete="off"></label>
     <div class="grid2"><label>Data umowy <input type="date" id="f-data" value="${esc(f.data)}" required></label>
       <label>Telefon <input type="tel" id="f-tel" maxlength="40" value="${esc(f.telefon)}" autocomplete="off"></label></div>
@@ -271,13 +265,9 @@ function rysujKlienta(usun) {
     <div class="chips">${chipy('kredyt', [['', '—'], ...KREDYT.map(x => [x, x])], f.kredyt)}</div>
     <div class="grid2"><label>Kwota kredytu (zł) <input type="text" inputmode="decimal" id="f-kwota" value="${f.kwota ?? ''}" placeholder="np. 350000"></label>
       <label>Zamknięcie sprzedaży <input type="date" id="f-zamk" value="${esc(f.zamkniecie || '')}"></label></div>
-    <div id="box-grupa"${f.od_kogo === 'Biuro' ? '' : ' hidden'}>
-      <div class="sekcja-tytul">Grupa (ile RM dostaje od Natalii)</div>
-      <div class="chips">${chipy('grupa', [['A', 'A · klient transakcji RM · 1%'], ['B', 'B · z marki RM (reklama, telefon) · 0,8%']], f.grupa)}</div>
-    </div>
-    <div id="box-prow"${f.od_kogo === 'Natalia' ? '' : ' hidden'}>
-      <label>Prowizja RM netto z tej transakcji (zł) <input type="text" inputmode="decimal" id="f-prow" value="${f.prowizja_rm ?? ''}" placeholder="np. 12000, Natalia dostaje 10%"></label>
-    </div>
+    <div class="sekcja-tytul">Prowizja Natalii (% kwoty kredytu, podaje Natalia)</div>
+    <div class="chips">${STAWKI.map(v => `<button type="button" class="chip chip-mala${Number(f.prowizja_rm) === v ? ' on' : ''}" data-stawka="${v}">${procTxt(v)}</button>`).join('')}
+      <input type="text" inputmode="decimal" id="f-proc" class="mini-pole" value="${f.prowizja_rm ?? ''}" placeholder="inna %" aria-label="Stawka Natalii w procentach"></div>
     <label>Notatka <textarea id="f-not" maxlength="1000" rows="3" placeholder="np. bank, czego brakuje, termin aktu">${esc(f.notatka)}</textarea></label>
     <div class="stan-box rozl" id="f-rozl"></div>
     <button class="btn btn-main" type="submit">Zapisz</button>
@@ -291,15 +281,15 @@ function rysujKlienta(usun) {
 function czytajKlienta() {
   const f = S.f; if (!$('#f-kl')) return f;
   Object.assign(f, { klient: $('#f-klient').value, data: $('#f-data').value, telefon: $('#f-tel').value, nieruchomosc: $('#f-nier').value,
-    kwota: $('#f-kwota').value, zamkniecie: $('#f-zamk').value || null, prowizja_rm: $('#f-prow').value, notatka: $('#f-not').value });
+    kwota: $('#f-kwota').value, zamkniecie: $('#f-zamk').value || null, prowizja_rm: $('#f-proc').value, notatka: $('#f-not').value });
   return f;
 }
 function rozliczenie() {
   const f = S.f, el = $('#f-rozl'); if (!el) return;
-  const kwota = liczba($('#f-kwota')?.value), prow = liczba($('#f-prow')?.value);
-  const p = { ...f, kwota, prowizja_rm: prow, zamkniecie: $('#f-zamk')?.value || null };
-  if (f.od_kogo === 'Biuro') el.innerHTML = p.kredyt === 'Tak' && kwota ? `Dla RM od Natalii: <b>${zl(dlaRM(p))}</b> (${f.grupa === 'B' ? '0,8' : '1'}% kwoty kredytu, brutto)` : `Rozliczenie: ${f.grupa === 'B' ? '0,8' : '1'}% kwoty kredytu dla RM, gdy kredyt = Tak i jest kwota.`;
-  else el.innerHTML = prow ? (p.zamkniecie ? `Dla Natalii od RM: <b>${zl(dlaNatalii(p))}</b> (10% prowizji RM netto, po wpływie prowizji)` : `Po zamknięciu sprzedaży dla Natalii: <b>${zl(prow * DLA_NATALII)}</b> (10% prowizji RM netto)`) : 'Rozliczenie: Natalia dostaje 10% prowizji RM netto, gdy sprzedaż się zamknie.';
+  const p = { ...f, kwota: liczba($('#f-kwota')?.value), prowizja_rm: liczba($('#f-proc')?.value) };
+  $$('[data-stawka]', $('#arkusz')).forEach(c => c.classList.toggle('on', Number(c.dataset.stawka) === p.prowizja_rm));
+  el.innerHTML = dlaRM(p) ? `Prowizja Natalii ${zl(prowNatalii(p))} (${procTxt(p.prowizja_rm)}), dla RM 50%: <b>${zl(dlaRM(p))}</b>`
+    : 'Rozliczenie: RM dostaje 50% prowizji Natalii. Policzy się, gdy kredyt = Tak, jest kwota i stawka Natalii.';
 }
 
 // ===================== KAMPANIE =====================
@@ -398,6 +388,83 @@ async function zapiszKampanie(zamknij) {
   if (zamknij) { toast('Zapisano'); zamknijArkusz(); }
 }
 
+// ===================== RAPORT DLA NATALII (klienci przekazani przez RM) =====================
+const OKRESY = [['miesiac', 'Ten miesiąc'], ['poprzedni', 'Poprzedni miesiąc'], ['rok', 'Ten rok'], ['wszystko', 'Wszystko'], ['wlasny', 'Od do']];
+const MIES = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień'];
+function zakres() {
+  const d = new Date(), y = d.getFullYear(), m = d.getMonth();
+  const pierwszy = (yy, mm) => isoDzien(new Date(yy, mm, 1)), ostatni = (yy, mm) => isoDzien(new Date(yy, mm + 1, 0));
+  if (S.okres === 'miesiac') return { od: pierwszy(y, m), do: ostatni(y, m), opis: `${MIES[m]} ${y}` };
+  if (S.okres === 'poprzedni') { const p = new Date(y, m - 1, 1); return { od: pierwszy(p.getFullYear(), p.getMonth()), do: ostatni(p.getFullYear(), p.getMonth()), opis: `${MIES[p.getMonth()]} ${p.getFullYear()}` }; }
+  if (S.okres === 'rok') return { od: `${y}-01-01`, do: `${y}-12-31`, opis: `rok ${y}` };
+  if (S.okres === 'wlasny') return { od: S.rapOd || '0000', do: S.rapDo || '9999', opis: `${S.rapOd ? dataPL(S.rapOd) : 'od początku'} do ${S.rapDo ? dataPL(S.rapDo) : 'dziś'}` };
+  return { od: '0000', do: '9999', opis: 'cała współpraca' };
+}
+function daneRaportu() {
+  const z = zakres();
+  const L = S.klienci.filter(k => k.data >= z.od && k.data <= z.do).sort((a, b) => a.data.localeCompare(b.data));
+  const udz = L.filter(k => k.kredyt === 'Tak');
+  return { z, L, ileKredytow: udz.length, sumaKredytow: udz.reduce((s, k) => s + Number(k.kwota || 0), 0),
+    nat: L.reduce((s, k) => s + prowNatalii(k), 0), rm: L.reduce((s, k) => s + dlaRM(k), 0),
+    bezStawki: udz.filter(k => !k.prowizja_rm).length };
+}
+const zdolnoscTxt = (k) => k.zdolnosc || 'nie sprawdzona';
+const kredytTxt = (k) => k.kredyt || 'brak informacji';
+const stanTxt = (k) => k.zamkniecie ? 'zamknięte ' + dataPL(k.zamkniecie) : 'w toku';
+
+function otworzRaport() { S.otwarty = { typ: 'raport' }; rysujRaport(); otworzArkusz(); }
+function rysujRaport() {
+  const R = daneRaportu(), pusto = R.L.length ? '' : ' disabled';
+  $('#ark-nr').textContent = 'Raport dla Natalii';
+  $('#ark-tresc').innerHTML = `
+    <div class="sekcja-tytul">Okres (data przekazania klienta)</div>
+    <div class="chips">${OKRESY.map(([k, n]) => `<button type="button" class="chip chip-mala${S.okres === k ? ' on' : ''}" data-okres="${k}">${n}</button>`).join('')}</div>
+    ${S.okres === 'wlasny' ? `<div class="grid2"><label>Od <input type="date" id="rap-od" value="${esc(S.rapOd)}"></label><label>Do <input type="date" id="rap-do" value="${esc(S.rapDo)}"></label></div>` : ''}
+    <div class="kafle kafle4">
+      <div class="kafel"><b>${R.L.length}</b><span>przekazanych</span></div>
+      <div class="kafel"><b>${R.ileKredytow}</b><span>z kredytem</span></div>
+      <div class="kafel"><b>${zl(R.sumaKredytow)}</b><span>kwota kredytów</span></div>
+      <div class="kafel"><b>${zl(R.rm)}</b><span>dla RM (50%)</span></div>
+    </div>
+    ${R.bezStawki ? `<div class="info">Brak stawki Natalii u ${R.bezStawki} ${R.bezStawki === 1 ? 'klienta' : 'klientów'} z kredytem, więc nie liczą się do sumy. Natalia wpisuje stawkę w karcie klienta.</div>` : ''}
+    ${R.L.length ? `<table class="rap-tab"><tbody>${R.L.map(k => `<tr><td>${dataPL(k.data)}</td><td><b>${esc(k.klient)}</b><div class="small muted">${esc(k.nieruchomosc)}${k.nieruchomosc ? ' · ' : ''}kredyt: ${esc(kredytTxt(k).toLowerCase())}${k.kwota ? ' ' + zl(k.kwota) : ''}${k.prowizja_rm ? ' · ' + procTxt(k.prowizja_rm) : ''} · ${stanTxt(k)}</div></td><td class="r">${dlaRM(k) ? zl(dlaRM(k)) : ''}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td></td><td>Razem dla RM</td><td class="r">${zl(R.rm)}</td></tr></tfoot></table>` : '<div class="pusto">W tym okresie nie ma przekazanych klientów.</div>'}
+    <button class="btn btn-main" data-akcja="rap-druk"${pusto}>🖨️ Drukuj albo zapisz PDF</button>
+    <button class="btn btn-ghost" data-akcja="rap-csv"${pusto}>📊 Pobierz do Excela</button>
+    <button class="btn btn-ghost" data-akcja="rap-kopiuj"${pusto}>📋 Kopiuj do maila lub SMS</button>
+    <p class="small muted">RM dostaje 50% prowizji Natalii. Prowizja Natalii = jej stawka (% kwoty kredytu) razy kwota udzielonego kredytu.</p>`;
+}
+function drukujRaport() {
+  const R = daneRaportu();
+  const el = $('#druk'); el.className = 'raport';
+  el.innerHTML = `<div class="druk-glowa"><img src="logo.png" alt=""><h1>Klienci przekazani Natalii</h1></div>
+    <div>Okres: <b>${esc(R.z.opis)}</b> · stan na ${dataPL(dzis())}</div>
+    <div class="druk-podsum"><div><b>${R.L.length}</b>klientów</div><div><b>${R.ileKredytow}</b>z udzielonym kredytem</div><div><b>${zl(R.sumaKredytow)}</b>kwota kredytów</div><div><b>${zl(R.nat)}</b>prowizja Natalii</div><div><b>${zl(R.rm)}</b>dla RM (50%)</div></div>
+    <table><thead><tr><th>Lp.</th><th>Data</th><th>Klient</th><th>Telefon</th><th>Nieruchomość</th><th>Zdolność</th><th>Kredyt</th><th class="r">Kwota</th><th class="r">Stawka</th><th>Sprzedaż</th><th class="r">Prow. Natalii</th><th class="r">Dla RM</th></tr></thead>
+    <tbody>${R.L.map((k, i) => `<tr><td>${i + 1}</td><td>${dataPL(k.data)}</td><td>${esc(k.klient)}</td><td>${esc(k.telefon)}</td><td>${esc(k.nieruchomosc)}</td><td>${esc(zdolnoscTxt(k))}</td><td>${esc(kredytTxt(k))}</td><td class="r">${k.kwota ? zl(k.kwota) : ''}</td><td class="r">${k.prowizja_rm ? procTxt(k.prowizja_rm) : ''}</td><td>${stanTxt(k)}</td><td class="r">${prowNatalii(k) ? zl(prowNatalii(k)) : ''}</td><td class="r">${dlaRM(k) ? zl(dlaRM(k)) : ''}</td></tr>`).join('')}</tbody>
+    <tfoot><tr><td colspan="7">Razem</td><td class="r">${zl(R.sumaKredytow)}</td><td colspan="2"></td><td class="r">${zl(R.nat)}</td><td class="r">${zl(R.rm)}</td></tr></tfoot></table>
+    <div class="druk-nota">RM Nieruchomości otrzymuje 50% prowizji doradcy kredytowego od każdego przekazanego klienta. Stawkę prowizji podaje doradca. Dokument zawiera dane osobowe klientów, służy tylko do rozliczenia między stronami.</div>`;
+  window.print();
+}
+function csvRaport() {
+  const R = daneRaportu(), q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const kw = (n) => n ? String(Math.round(Number(n) * 100) / 100).replace('.', ',') : '';
+  const wiersze = [['Lp.', 'Data przekazania', 'Klient', 'Telefon', 'Nieruchomość', 'Zdolność', 'Kredyt', 'Kwota kredytu', 'Stawka Natalii %', 'Zamknięcie sprzedaży', 'Prowizja Natalii', 'Dla RM 50%', 'Notatka'],
+    ...R.L.map((k, i) => [i + 1, dataPL(k.data), k.klient, k.telefon, k.nieruchomosc, zdolnoscTxt(k), kredytTxt(k), kw(k.kwota), kw(k.prowizja_rm), dataPL(k.zamkniecie), kw(prowNatalii(k)), kw(dlaRM(k)), k.notatka]),
+    ['', '', 'RAZEM', '', '', '', '', kw(R.sumaKredytow), '', '', kw(R.nat), kw(R.rm), '']];
+  const blob = new Blob(['﻿' + wiersze.map(w => w.map(q).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Klienci dla Natalii ${R.z.opis}.csv`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+async function kopiujRaport() {
+  const R = daneRaportu();
+  const t = [`Klienci przekazani przez RM, ${R.z.opis}:`,
+    ...R.L.map((k, i) => `${i + 1}. ${dataPL(k.data)} ${k.klient}${k.nieruchomosc ? ', ' + k.nieruchomosc : ''}, kredyt: ${kredytTxt(k).toLowerCase()}${k.kwota ? ' ' + zl(k.kwota) : ''}${k.prowizja_rm ? ', stawka ' + procTxt(k.prowizja_rm) : ''}${dlaRM(k) ? ', dla RM ' + zl(dlaRM(k)) : ''}`),
+    '', `Razem: ${R.L.length} klientów, kredyty ${zl(R.sumaKredytow)}, dla RM (50% prowizji) ${zl(R.rm)}.`].join('\n');
+  try { await navigator.clipboard.writeText(t); toast('Skopiowane, wklej w maila lub SMS'); } catch (e) { toast('Nie udało się skopiować', 4000); }
+}
+$('#btn-raport').addEventListener('click', otworzRaport);
+
 // ===================== KARTA: wspólne zdarzenia =====================
 function otworzArkusz() { $('#tlo').hidden = false; $('#arkusz').hidden = false; document.body.style.overflow = 'hidden'; }
 function zamknijArkusz() { $('#tlo').hidden = true; $('#arkusz').hidden = true; document.body.style.overflow = ''; S.otwarty = null; S.f = null; rysuj(); }
@@ -415,12 +482,20 @@ $('#arkusz').addEventListener('click', async (e) => {
   const img = e.target.closest('[data-pokaz]');
   if (img && img.src) { $('#podglad img').src = img.src; $('#podglad').hidden = false; return; }
   const b = e.target.closest('button'); if (!b) return;
+  if (O.typ === 'raport') {
+    if (b.dataset.okres) { S.okres = b.dataset.okres; rysujRaport(); }
+    if (b.dataset.akcja === 'rap-druk') drukujRaport();
+    if (b.dataset.akcja === 'rap-csv') csvRaport();
+    if (b.dataset.akcja === 'rap-kopiuj') kopiujRaport();
+    return;
+  }
+  if (b.dataset.stawka) { $('#f-proc').value = b.dataset.stawka.replace('.', ','); rozliczenie(); return; }
   const klient = O.typ === 'klient';
   if (b.dataset.pole) {
     if (klient) czytajKlienta(); else czytajKampanie();
     S.f[b.dataset.pole] = b.dataset.v;
     $$(`[data-pole="${b.dataset.pole}"]`, $('#arkusz')).forEach(c => c.classList.toggle('on', c === b));
-    if (klient) { $('#box-grupa').hidden = S.f.od_kogo !== 'Biuro'; $('#box-prow').hidden = S.f.od_kogo !== 'Natalia'; rozliczenie(); }
+    if (klient) rozliczenie();
     return;
   }
   if (b.dataset.miejsce) {
@@ -457,7 +532,8 @@ $('#arkusz').addEventListener('click', async (e) => {
     } catch (err) { toast('Nie udało się: ' + err.message, 5000); }
   }
 });
-$('#arkusz').addEventListener('input', (e) => { if (['f-kwota', 'f-prow', 'f-zamk'].includes(e.target.id)) rozliczenie(); });
+$('#arkusz').addEventListener('change', (e) => { if (['rap-od', 'rap-do'].includes(e.target.id)) { S[e.target.id === 'rap-od' ? 'rapOd' : 'rapDo'] = e.target.value; rysujRaport(); } });
+$('#arkusz').addEventListener('input', (e) => { if (['f-kwota', 'f-zamk', 'f-proc'].includes(e.target.id)) rozliczenie(); });
 $('#arkusz').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'm-inne') { e.preventDefault(); $('[data-akcja="miejsce"]').click(); } });
 
 $('#plik-zdjecie').addEventListener('change', async (e) => {
@@ -481,14 +557,14 @@ $('#arkusz').addEventListener('submit', async (e) => {
   try {
     if (e.target.id === 'f-kamp') { await zapiszKampanie(true); return; }
     if (e.target.id !== 'f-kl') return;
-    const f = czytajKlienta(), kwota = liczba(f.kwota), prow = liczba(f.prowizja_rm);
+    const f = czytajKlienta(), kwota = liczba(f.kwota), proc = liczba(f.prowizja_rm);
     const klient = f.klient.trim().replace(/\s+/g, ' ');
     if (!klient) throw new Error('Wpisz imię i nazwisko klienta');
-    if (Number.isNaN(kwota) || Number.isNaN(prow)) throw new Error('Kwoty wpisz samą liczbą, np. 350000');
+    if (proc != null && proc > 10) throw new Error('Wpisz stawkę w procentach, np. 2 albo 1,5');
+    if (Number.isNaN(kwota) || Number.isNaN(proc)) throw new Error('Kwoty wpisz samą liczbą, np. 350000');
     const nowy = !S.otwarty.id;
-    const r = { id: S.otwarty.id || uuid(), data: f.data || dzis(), od_kogo: f.od_kogo, klient, telefon: f.telefon.trim(), nieruchomosc: f.nieruchomosc.trim(),
-      zdolnosc: f.zdolnosc, kredyt: f.kredyt, kwota, zamkniecie: f.zamkniecie, grupa: f.od_kogo === 'Biuro' ? (f.grupa || 'A') : '',
-      prowizja_rm: f.od_kogo === 'Natalia' ? prow : null, notatka: f.notatka.trim(), zmienil: S.user.id, zmieniono: new Date().toISOString() };
+    const r = { id: S.otwarty.id || uuid(), data: f.data || dzis(), od_kogo: 'Biuro', klient, telefon: f.telefon.trim(), nieruchomosc: f.nieruchomosc.trim(),
+      zdolnosc: f.zdolnosc, kredyt: f.kredyt, kwota, zamkniecie: f.zamkniecie, grupa: '', prowizja_rm: proc, notatka: f.notatka.trim(), zmienil: S.user.id, zmieniono: new Date().toISOString() };
     await DB.zapiszKlienta(r, nowy);
     const i = S.klienci.findIndex(x => x.id === r.id);
     if (i >= 0) S.klienci[i] = { ...S.klienci[i], ...r }; else S.klienci.push({ utworzyl: S.user.id, ...r });
