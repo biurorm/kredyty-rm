@@ -254,3 +254,4 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .hist li { padding: 6px 0; border-bottom: 1px solid var(--border); }
 .czerwony-txt { color: var(--late); }
 .ok-txt { color: var(--ok); }
+.doradcy { margin: 12px 0 4px; }
