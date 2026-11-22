@@ -1,16 +1,17 @@
 // KREDYTY RM: klienci przekazani przez RM doradcom kredytowym (od v4 osobno Natalia i Jarek) + raport do druku/Excela
 // oraz kampanie reklamowe na kredyt (miejsce, zdjęcie, termin, budżet, zapytania).
 // Dane w bazie Zadań RM (Supabase, to samo logowanie). Bez config.js albo z ?proba: tryb próbny w tej przeglądarce.
-const WERSJA = 'v5';
+const WERSJA = 'v6';
 
 // rozliczenie: RM dostaje udział w prowizji doradcy; stawkę (np. 1,5 / 2 / 3% kwoty kredytu) podaje doradca.
-// Stawka w % siedzi w kolumnie prowizja_rm. Natalia 50% (ustalone 19.11.2026), Jarek: warunki do wpisania (null = nie liczymy).
+// Stawka w % siedzi w kolumnie prowizja_rm. Natalia: podział 50/50 uzyskanej prowizji (ustalone 19.11, potwierdzone 22.11.2026), Jarek: warunki do wpisania (null = nie liczymy).
 const DORADCY = {
   Natalia: { kto: 'Natalia', kogo: 'Natalii', komu: 'Natalii', udzial: 0.5 },
   Jarek: { kto: 'Jarek', kogo: 'Jarka', komu: 'Jarkowi', udzial: null }
 };
 const dor = (k) => DORADCY[k?.doradca] || DORADCY.Natalia;
 const udzTxt = (d) => d.udzial ? Math.round(d.udzial * 100) + '%' : 'udział do ustalenia';
+const podzTxt = (d) => d.udzial ? `${Math.round(d.udzial * 100)}/${100 - Math.round(d.udzial * 100)}` : 'do ustalenia';
 // etapy klienta u doradcy (daty); od v3 zmiany zapisuje baza w kredyty_historia (migracja-v3.sql)
 const ETAPY = [['kontakt', 'Pierwszy kontakt doradcy'], ['wniosek', 'Wniosek w banku'], ['decyzja', 'Decyzja banku'], ['umowa', 'Umowa kredytowa']];
 const POLA = { data: 'Data przekazania', klient: 'Klient', telefon: 'Telefon', nieruchomosc: 'Nieruchomość', zdolnosc: 'Zdolność', kredyt: 'Kredyt',
@@ -329,7 +330,7 @@ function rysujKlienta(usun) {
     ${potwBox}
     <div class="stan-box rozl" id="f-rozl"></div>
 
-    <div class="sekcja-tytul">Wypłata dla RM (${udzTxt(d)})</div>
+    <div class="sekcja-tytul">Wypłata dla RM (podział ${podzTxt(d)})</div>
     <div class="grid2"><label>Zapłacono RM <input type="date" id="f-zaplacono" value="${esc(f.zaplacono || '')}"></label>
       <label>Nr faktury <input type="text" id="f-faktura" maxlength="60" value="${esc(f.faktura || '')}" autocomplete="off"></label></div>
 
@@ -381,9 +382,13 @@ function rozliczenie() {
   const p = { ...f, kwota: liczba($('#f-kwota')?.value), prowizja_rm: liczba($('#f-proc')?.value) };
   $$('[data-stawka]', $('#arkusz')).forEach(c => c.classList.toggle('on', Number(c.dataset.stawka) === p.prowizja_rm));
   const d = dor(f);
+  const kr = $$('[data-pole="kredyt"].on', $('#arkusz'))[0]?.dataset.v ?? p.kredyt;
+  const szac = p.kwota && p.prowizja_rm && !['Nie', 'Bez kredytu'].includes(kr) ? p.kwota * p.prowizja_rm / 100 : 0;
+  const pol = (x) => `RM <b>${zl(x * d.udzial)}</b>, ${d.kto} ${zl(x - x * d.udzial)}`;
   el.innerHTML = !d.udzial ? `Udział RM w prowizji ${d.kogo} jeszcze nie ustalony${prowDoradcy(p) ? `. Prowizja ${d.kogo}: ${zl(prowDoradcy(p))} (${procTxt(p.prowizja_rm)})` : ''}.`
-    : dlaRM(p) ? `Prowizja ${d.kogo} ${zl(prowDoradcy(p))} (${procTxt(p.prowizja_rm)}), dla RM ${udzTxt(d)}: <b>${zl(dlaRM(p))}</b>`
-    : `Rozliczenie: RM dostaje ${udzTxt(d)} prowizji ${d.kogo}. Policzy się, gdy kredyt = Tak, jest kwota i stawka.`;
+    : szac && kr === 'Tak' ? `Prowizja ${d.kogo} ${zl(szac)} (${procTxt(p.prowizja_rm)}). Podział ${podzTxt(d)}: ${pol(szac)}`
+    : szac ? `Szacunek, gdy kredyt zostanie udzielony: prowizja ${d.kogo} ${zl(szac)} (${procTxt(p.prowizja_rm)}), podział ${podzTxt(d)}: ${pol(szac)}`
+    : `Rozliczenie ${podzTxt(d)}: uzyskaną prowizję ${d.kogo} dzielimy po połowie, RM i ${d.kto}. Kwota policzy się po wpisaniu kwoty kredytu i stawki.`;
 }
 
 // ===================== KAMPANIE =====================
@@ -542,7 +547,7 @@ function drukujRaport() {
       <td class="r">${k.kwota ? zl(k.kwota) : ''}</td><td class="r">${k.prowizja_rm ? procTxt(k.prowizja_rm) + (k.stawka_potw ? ' ✓' : ' ?') : ''}</td>
       <td class="r">${prowDoradcy(k) ? zl(prowDoradcy(k)) : ''}</td><td class="r">${dlaRM(k) ? zl(dlaRM(k)) : ''}</td><td>${k.zaplacono ? dataPL(k.zaplacono) + (k.faktura ? ', ' + esc(k.faktura) : '') : dlaRM(k) ? 'do zapłaty' : ''}</td></tr>`).join('')}</tbody>
     <tfoot><tr><td colspan="8">Razem</td><td class="r">${zl(R.sumaKredytow)}</td><td></td><td class="r">${zl(R.nat)}</td><td class="r">${zl(R.rm)}</td><td>do zapłaty ${zl(R.doZap)}</td></tr></tfoot></table>
-    <div class="druk-nota">${DS().udzial ? `RM Nieruchomości otrzymuje ${udzTxt(DS())} prowizji doradcy kredytowego od każdego przekazanego klienta.` : 'Udział RM w prowizji doradcy do ustalenia.'} Stawkę prowizji podaje doradca: ✓ potwierdzona przez doradcę w aplikacji, ? czeka na potwierdzenie. Pełna historia zmian każdego klienta jest w aplikacji Kredyty RM. Dokument zawiera dane osobowe klientów, służy tylko do rozliczenia między stronami.</div>`;
+    <div class="druk-nota">${DS().udzial ? `Rozliczenie ${podzTxt(DS())}: RM Nieruchomości otrzymuje ${udzTxt(DS())} uzyskanej prowizji doradcy kredytowego od każdego przekazanego klienta.` : 'Udział RM w prowizji doradcy do ustalenia.'} Stawkę prowizji podaje doradca: ✓ potwierdzona przez doradcę w aplikacji, ? czeka na potwierdzenie. Pełna historia zmian każdego klienta jest w aplikacji Kredyty RM. Dokument zawiera dane osobowe klientów, służy tylko do rozliczenia między stronami.</div>`;
   window.print();
 }
 function csvRaport() {
