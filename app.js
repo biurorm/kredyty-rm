@@ -1,7 +1,7 @@
 // KREDYTY RM: klienci przekazani przez RM doradcom kredytowym (od v4 osobno Natalia i Jarek) + raport do druku/Excela
 // oraz kampanie reklamowe na kredyt (miejsce, zdjęcie, termin, budżet, zapytania).
 // Dane w bazie Zadań RM (Supabase, to samo logowanie). Bez config.js albo z ?proba: tryb próbny w tej przeglądarce.
-const WERSJA = 'v7';
+const WERSJA = 'v8';
 
 // rozliczenie: RM dostaje udział w prowizji doradcy; stawkę (np. 1,5 / 2 / 3% kwoty kredytu) podaje doradca.
 // Stawka w % siedzi w kolumnie prowizja_rm. Natalia: podział 50/50 uzyskanej prowizji (ustalone 19.11, potwierdzone 22.11.2026), Jarek: warunki do wpisania (null = nie liczymy).
@@ -21,10 +21,11 @@ const STAWKI = [1.5, 2, 3];
 // kredyt otrzymany: w bazie krótkie kody (Tak i Nie zostają ze starych wersji, żeby nie przepisywać danych), na ekranie nazwy od v7
 const KREDYT = [['W trakcie', 'W trakcie'], ['Nie', 'Brak zdolności'], ['Niestandardowe', 'Rozwiązanie niestandardowe'], ['Tak', 'Otrzymany']];
 const kredytNazwa = (v) => (KREDYT.find(x => x[0] === v) || [])[1] || v;
-// pasek postępu: od kontaktu z doradcą do aktu (akt podpisany = 100%)
-const KROKI = [['Kontakt z doradcą', f => !!f.kontakt], ['Zdolność sprawdzona', f => f.zdolnosc === 'Tak'], ['Wniosek w banku', f => !!f.wniosek],
-  ['Decyzja banku', f => !!f.decyzja], ['Kredyt otrzymany', f => f.kredyt === 'Tak'], ['Umowa kredytowa', f => !!f.umowa],
-  ['Termin aktu', f => !!f.akt], ['Akt podpisany', f => !!f.zamkniecie]];
+// pasek postępu: od kontaktu z doradcą do aktu, STAŁE progi (v8): krok dokłada swoją część, zamknięcie = 100%
+const KROKI = [['Kontakt z doradcą', f => !!f.kontakt, 10], ['Zdolność sprawdzona', f => f.zdolnosc === 'Tak', 20], ['Wniosek w banku', f => !!f.wniosek, 35],
+  ['Decyzja banku', f => !!f.decyzja, 50], ['Kredyt otrzymany', f => f.kredyt === 'Tak', 65], ['Umowa kredytowa', f => !!f.umowa, 80],
+  ['Termin aktu', f => !!f.akt, 90], ['Zamknięcie', f => !!f.zamkniecie, 100]];
+const wagaKroku = (i) => KROKI[i][2] - (i ? KROKI[i - 1][2] : 0);
 const MIEJSCA = ['Facebook / Instagram', 'Google', 'Strona www', 'Otodom / OLX', 'Baner', 'Witryna biura', 'Ulotki', 'Prasa / radio'];
 const K_STATUS = { plan: 'Plan', aktywna: 'Aktywna', zakonczona: 'Zakończona' };
 
@@ -187,11 +188,11 @@ const mojiKlienci = () => S.klienci.filter(k => (k.doradca || 'Natalia') === S.d
 const procTxt = (v) => String(v).replace('.', ',') + '%';
 const dniOd = (iso) => Math.floor((new Date(dzis()) - new Date(iso.slice(0, 10))) / 864e5);
 const bezKredytu = (k) => k.kredyt === 'Nie' || k.kredyt === 'Bez kredytu';
-const etap = (k) => k.zamkniecie ? 'akt podpisany' : bezKredytu(k) ? (k.kredyt === 'Nie' ? 'brak zdolności' : 'bez kredytu')
+const etap = (k) => k.zamkniecie ? 'zamknięcie' : bezKredytu(k) ? (k.kredyt === 'Nie' ? 'brak zdolności' : 'bez kredytu')
   : k.akt ? 'akt ' + dataPL(k.akt) : (ETAPY.filter(([p]) => k[p]).pop()?.[1] || 'przekazany') + (k.kredyt === 'Niestandardowe' ? ' · rozw. niestandardowe' : '');
 function postep(f) {
-  const zrob = KROKI.map(([, t]) => t(f)), n = zrob.filter(Boolean).length;
-  const proc = f.zamkniecie ? 100 : Math.round(n / KROKI.length * 100);
+  const zrob = KROKI.map(([, t]) => t(f));
+  const proc = f.zamkniecie ? 100 : zrob.reduce((s, z, i) => s + (z ? wagaKroku(i) : 0), 0);
   const stan = f.zamkniecie ? 'ok' : (f.zdolnosc === 'Nie' || bezKredytu(f)) ? 'stop' : f.kredyt === 'Niestandardowe' ? 'nst' : '';
   return { zrob, proc, stan, nast: f.zamkniecie ? null : KROKI.find((k, i) => !zrob[i])?.[0] };
 }
@@ -296,7 +297,7 @@ function rysujKlientow() {
       ${k.nieruchomosc ? `<div class="klient-nier">🏠 ${esc(k.nieruchomosc)}</div>` : ''}
       ${pasek(postep(k))}
       <div class="tagi">${kont}${zd}${et}${pot}${roz}</div>
-      <div class="small muted">przekazany ${dataPL(k.data)}${k.akt && !zamkniety(k) ? ` · 📅 termin aktu ${dataPL(k.akt)}` : ''}${zamkniety(k) ? ` · ✅ akt podpisany ${dataPL(k.zamkniecie)}` : ''}</div>
+      <div class="small muted">przekazany ${dataPL(k.data)}${k.akt && !zamkniety(k) ? ` · 📅 termin aktu ${dataPL(k.akt)}` : ''}${zamkniety(k) ? ` · ✅ zamknięcie ${dataPL(k.zamkniecie)}` : ''}</div>
     </button>`;
   }).join('') : `<div class="pusto">${K.length ? 'Nic tu nie pasuje.' : 'Brak klientów. Dodaj pierwszego przyciskiem ＋.'}</div>`;
 }
@@ -349,7 +350,7 @@ function rysujKlienta(usun) {
 
     <div class="sekcja-tytul">Akt notarialny</div>
     <div class="grid2"><label>Termin aktu <input type="date" id="f-akt" value="${esc(f.akt || '')}"></label>
-      <label>Akt podpisany (zamknięcie) <input type="date" id="f-zamk" value="${esc(f.zamkniecie || '')}"></label></div>
+      <label>Zamknięcie <input type="date" id="f-zamk" value="${esc(f.zamkniecie || '')}"></label></div>
     <div class="sekcja-tytul">Prowizja doradcy (% kwoty kredytu, podaje doradca)</div>
     <div class="chips">${STAWKI.map(v => `<button type="button" class="chip chip-mala${Number(f.prowizja_rm) === v ? ' on' : ''}" data-stawka="${v}">${procTxt(v)}</button>`).join('')}
       <input type="text" inputmode="decimal" id="f-proc" class="mini-pole" value="${String(f.prowizja_rm ?? '').replace('.', ',')}" placeholder="inna %" aria-label="Stawka doradcy w procentach"></div>
@@ -373,9 +374,9 @@ function rysujKlienta(usun) {
 function rysujPostep() {
   const el = $('#f-postep'); if (!el) return;
   const P = postep(czytajKlienta()), gotowe = P.proc === 100;
-  el.innerHTML = `<div class="row-between small"><b>Postęp do aktu</b><span class="muted">${gotowe ? '✅ akt podpisany' : P.stan === 'stop' ? '⛔ brak zdolności' : P.nast ? 'następny krok: ' + P.nast : ''}</span></div>
+  el.innerHTML = `<div class="row-between small"><b>Postęp do aktu</b><span class="muted">${gotowe ? '✅ zamknięcie' : P.stan === 'stop' ? '⛔ brak zdolności' : P.nast ? 'następny krok: ' + P.nast : ''}</span></div>
     ${pasek(P)}
-    <div class="kroki">${KROKI.map(([n], i) => `<span class="krok${P.zrob[i] || gotowe ? ' ok' : ''}">${P.zrob[i] || gotowe ? '✓' : '○'} ${n}</span>`).join('')}</div>`;
+    <div class="kroki">${KROKI.map(([n], i) => `<span class="krok${P.zrob[i] || gotowe ? ' ok' : ''}">${P.zrob[i] || gotowe ? '✓' : '○'} ${n} <b>${KROKI[i][2]}%</b></span>`).join('')}</div>`;
 }
 
 // historia zmian z bazy (kto, kiedy, było, jest)
@@ -577,7 +578,7 @@ function drukujRaport() {
     <tbody>${R.L.map((k, i) => `<tr><td>${i + 1}</td><td>${dataPL(k.data)}</td><td>${esc(k.klient)}</td><td>${esc(k.telefon)}</td><td>${esc(k.nieruchomosc)}</td>
       <td>${k.kontakt ? dataPL(k.kontakt) : brakKontaktu(k) ? 'brak' : ''}</td><td>${esc(etap(k))}</td><td>${esc(k.bank || '')}</td>
       <td class="r">${k.kwota ? zl(k.kwota) : ''}</td><td class="r">${k.prowizja_rm ? procTxt(k.prowizja_rm) + (k.stawka_potw ? ' ✓' : ' ?') : ''}</td>
-      <td class="r">${prowDoradcy(k) ? zl(prowDoradcy(k)) : ''}</td><td class="r">${dlaRM(k) ? zl(dlaRM(k)) : ''}</td><td>${k.zamkniecie ? 'podpisany ' + dataPL(k.zamkniecie) : dataPL(k.akt)}</td><td class="r">${postep(k).proc}%</td></tr>`).join('')}</tbody>
+      <td class="r">${prowDoradcy(k) ? zl(prowDoradcy(k)) : ''}</td><td class="r">${dlaRM(k) ? zl(dlaRM(k)) : ''}</td><td>${k.zamkniecie ? 'zamknięcie ' + dataPL(k.zamkniecie) : dataPL(k.akt)}</td><td class="r">${postep(k).proc}%</td></tr>`).join('')}</tbody>
     <tfoot><tr><td colspan="8">Razem</td><td class="r">${zl(R.sumaKredytow)}</td><td></td><td class="r">${zl(R.nat)}</td><td class="r">${zl(R.rm)}</td><td colspan="2"></td></tr></tfoot></table>
     <div class="druk-nota">${DS().udzial ? `Rozliczenie ${podzTxt(DS())}: RM Nieruchomości otrzymuje ${udzTxt(DS())} uzyskanej prowizji doradcy kredytowego od każdego przekazanego klienta.` : 'Udział RM w prowizji doradcy do ustalenia.'} Stawkę prowizji podaje doradca: ✓ potwierdzona przez doradcę w aplikacji, ? czeka na potwierdzenie. Pełna historia zmian każdego klienta jest w aplikacji Kredyty RM. Dokument zawiera dane osobowe klientów, służy tylko do rozliczenia między stronami.</div>`;
   window.print();
@@ -586,7 +587,7 @@ function csvRaport() {
   const R = daneRaportu(), q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const kw = (n) => n ? String(Math.round(Number(n) * 100) / 100).replace('.', ',') : '';
   const wiersze = [['Lp.', 'Data przekazania', 'Klient', 'Telefon', 'Nieruchomość', 'Zdolność', 'Pierwszy kontakt', 'Wniosek', 'Decyzja', 'Umowa kredytowa', 'Etap', 'Bank', 'Kredyt',
-      'Kwota kredytu', 'Stawka doradcy %', 'Stawka potwierdzona', 'Prowizja doradcy', 'Dla RM', 'Termin aktu', 'Akt podpisany', 'Postęp %', 'Notatka'],
+      'Kwota kredytu', 'Stawka doradcy %', 'Stawka potwierdzona', 'Prowizja doradcy', 'Dla RM', 'Termin aktu', 'Zamknięcie', 'Postęp %', 'Notatka'],
     ...R.L.map((k, i) => [i + 1, dataPL(k.data), k.klient, k.telefon, k.nieruchomosc, zdolnoscTxt(k), dataPL(k.kontakt), dataPL(k.wniosek), dataPL(k.decyzja), dataPL(k.umowa), etap(k), k.bank,
       kredytTxt(k), kw(k.kwota), kw(k.prowizja_rm), k.prowizja_rm ? (k.stawka_potw ? 'tak ' + dataPL(k.stawka_potw_kiedy) : 'nie') : '', kw(prowDoradcy(k)), kw(dlaRM(k)),
       dataPL(k.akt), dataPL(k.zamkniecie), postep(k).proc, k.notatka]),
@@ -713,7 +714,7 @@ $('#arkusz').addEventListener('submit', async (e) => {
     await DB.zapiszKlienta(r, nowy);
     const i = S.klienci.findIndex(x => x.id === r.id);
     if (i >= 0) S.klienci[i] = { ...S.klienci[i], ...r }; else S.klienci.push({ utworzyl: S.user.id, ...r });
-    toast(r.stawka_potw ? 'Zapisano i potwierdzono ✅' : r.zamkniecie ? 'Zapisano, akt podpisany ✅' : `Zapisano · postęp ${postep(r).proc}%`); zamknijArkusz(); odswiez();
+    toast(r.stawka_potw ? 'Zapisano i potwierdzono ✅' : r.zamkniecie ? 'Zapisano, zamknięcie ✅' : `Zapisano · postęp ${postep(r).proc}%`); zamknijArkusz(); odswiez();
   } catch (err) { toast(err.message.startsWith('Wpisz') || err.message.startsWith('Kwoty') || err.message.startsWith('Budżet') ? err.message : 'Nie zapisało się: ' + err.message, 5000); }
   finally { if (btn) btn.disabled = false; }
 });
