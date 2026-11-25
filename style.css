@@ -256,3 +256,19 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .czerwony-txt { color: var(--late); }
 .ok-txt { color: var(--ok); }
 .doradcy { margin: 12px 0 4px; }
+
+/* PASEK POSTĘPU (v7): od kontaktu z doradcą do aktu */
+.postep { display: flex; align-items: center; gap: 8px; margin: 8px 0 6px; }
+.postep > b { font-size: 13px; min-width: 38px; text-align: right; color: var(--brand); }
+.postep-pasek { flex: 1; height: 10px; border-radius: 6px; background: var(--border); overflow: hidden; }
+.postep-pasek i { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--brand-light), var(--ok)); transition: width .45s ease; }
+.postep.ok .postep-pasek i { background: var(--ok); }
+.postep.ok > b { color: var(--ok); }
+.postep.nst .postep-pasek i { background: var(--out); }
+.postep.nst > b { color: var(--out); }
+.postep.stop .postep-pasek i { background: var(--late); }
+.postep.stop > b { color: var(--late); }
+.postep-box { position: sticky; top: -8px; z-index: 2; background: var(--card); margin: 0 -4px 6px; padding: 8px 4px 6px; border-bottom: 1px solid var(--border); }
+.postep-box .postep-pasek { height: 14px; border-radius: 8px; }
+.kroki { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); }
+.krok.ok { color: var(--ok); font-weight: 600; }
