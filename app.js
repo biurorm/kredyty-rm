@@ -1,7 +1,7 @@
 // KREDYTY RM: klienci przekazani przez RM doradcom kredytowym (od v4 osobno Natalia i Jarek) + raport do druku/Excela
 // oraz kampanie reklamowe na kredyt (miejsce, zdjęcie, termin, budżet, zapytania).
 // Dane w bazie Zadań RM (Supabase, to samo logowanie). Bez config.js albo z ?proba: tryb próbny w tej przeglądarce.
-const WERSJA = 'v8';
+const WERSJA = 'v9';
 
 // rozliczenie: RM dostaje udział w prowizji doradcy; stawkę (np. 1,5 / 2 / 3% kwoty kredytu) podaje doradca.
 // Stawka w % siedzi w kolumnie prowizja_rm. Natalia: podział 50/50 uzyskanej prowizji (ustalone 19.11, potwierdzone 22.11.2026), Jarek: warunki do wpisania (null = nie liczymy).
@@ -274,7 +274,7 @@ function rysujKlientow() {
     <div class="kafel"><b>${wToku.length}</b><span>w toku</span></div>
     <div class="kafel"><b>${zamk.filter(k => k.zamkniecie.startsWith(rok)).length}</b><span>zamknięte ${rok}</span></div>
     <div class="kafel"><b>${zl(sumaKredytow)}</b><span>kredyty udzielone</span></div>
-    <div class="kafel"><b>${zl(rm)}</b><span>dla RM</span></div>
+    <div class="kafel"><b>${zl(rm)}</b><span>faktury RM</span></div>
   </div>
   <div class="small muted srodek">${DS().udzial ? `Podział ${podzTxt(DS())} prowizji ${DS().kogo}` : `Udział RM u ${DS().kogo} do ustalenia`}${bezKontaktu ? ` · <b class="czerwony-txt">bez kontaktu ${DS().kogo}: ${bezKontaktu}</b>` : ''}${niepotw ? ` · stawka niepotwierdzona: ${niepotw}` : ''}</div>`;
 
@@ -290,7 +290,7 @@ function rysujKlientow() {
     const zd = k.zdolnosc === 'Tak' ? '<span class="tag ok">zdolność ✓</span>' : k.zdolnosc === 'Nie' ? '<span class="tag zle">brak zdolności</span>' : '<span class="tag">zdolność ?</span>';
     const et = `<span class="tag${bezKredytu(k) ? ' zle' : k.umowa ? ' ok' : ''}">${esc(etap(k))}${k.bank ? ' · ' + esc(k.bank) : ''}${k.kwota ? ' · ' + zl(k.kwota) : ''}</span>`;
     const kont = brakKontaktu(k) ? `<span class="tag zle">⏱ bez kontaktu ${dniOd(k.data)} dni</span>` : '';
-    const roz = dlaRM(k) ? `<span class="tag rm">dla RM ${zl(dlaRM(k))}</span>` : '';
+    const roz = dlaRM(k) ? `<span class="tag rm">🧾 faktura RM ${zl(dlaRM(k))}</span>` : '';
     const pot = k.prowizja_rm ? (k.stawka_potw ? `<span class="tag ok">stawka ${procTxt(k.prowizja_rm)} ✓</span>` : `<span class="tag">stawka ${procTxt(k.prowizja_rm)} niepotwierdzona</span>`) : '';
     return `<button class="klient${zamkniety(k) ? ' zamk' : ''}" data-klient="${k.id}">
       <b class="klient-imie">${esc(k.klient)}</b>
@@ -356,6 +356,8 @@ function rysujKlienta(usun) {
       <input type="text" inputmode="decimal" id="f-proc" class="mini-pole" value="${String(f.prowizja_rm ?? '').replace('.', ',')}" placeholder="inna %" aria-label="Stawka doradcy w procentach"></div>
     ${potwBox}
     <div class="stan-box rozl" id="f-rozl"></div>
+    <div class="sekcja-tytul">Faktura RM</div>
+    <div class="faktura-rm" id="f-fakt"></div>
 
 
     <label>Notatka <textarea id="f-not" maxlength="1000" rows="3" placeholder="np. czego brakuje">${esc(f.notatka)}</textarea></label>
@@ -418,6 +420,10 @@ function rozliczenie() {
   const kr = $$('[data-pole="kredyt"].on', $('#arkusz'))[0]?.dataset.v ?? p.kredyt;
   const szac = p.kwota && p.prowizja_rm && !['Nie', 'Bez kredytu'].includes(kr) ? p.kwota * p.prowizja_rm / 100 : 0;
   const pol = (x) => `RM <b>${zl(x * d.udzial)}</b>, ${d.kto} ${zl(x - x * d.udzial)}`;
+  const fk = $('#f-fakt');
+  if (fk) fk.innerHTML = !d.udzial ? `Kwota faktury RM do ustalenia (udział u ${d.kogo} nie ustalony).`
+    : szac ? `RM wystawia fakturę na <b>${zl(szac * d.udzial)}</b>${kr === 'Tak' ? '' : ' <span class="muted">(szacunek, gdy kredyt będzie otrzymany)</span>'}`
+    : 'Kwota faktury policzy się po wpisaniu kwoty kredytu i stawki doradcy.';
   el.innerHTML = !d.udzial ? `Udział RM w prowizji ${d.kogo} jeszcze nie ustalony${prowDoradcy(p) ? `. Prowizja ${d.kogo}: ${zl(prowDoradcy(p))} (${procTxt(p.prowizja_rm)})` : ''}.`
     : szac && kr === 'Tak' ? `Prowizja ${d.kogo} ${zl(szac)} (${procTxt(p.prowizja_rm)}). Podział ${podzTxt(d)}: ${pol(szac)}`
     : szac ? `Szacunek, gdy kredyt zostanie udzielony: prowizja ${d.kogo} ${zl(szac)} (${procTxt(p.prowizja_rm)}), podział ${podzTxt(d)}: ${pol(szac)}`
@@ -557,12 +563,12 @@ function rysujRaport() {
       <div class="kafel"><b>${R.L.length}</b><span>przekazanych</span></div>
       <div class="kafel"><b>${R.ileKredytow}</b><span>z kredytem</span></div>
       <div class="kafel"><b>${zl(R.sumaKredytow)}</b><span>kwota kredytów</span></div>
-      <div class="kafel"><b>${zl(R.rm)}</b><span>dla RM (${udzTxt(DS())})</span></div>
+      <div class="kafel"><b>${zl(R.rm)}</b><span>faktura RM (${udzTxt(DS())})</span></div>
     </div>
     ${R.niepotw ? `<div class="small muted srodek">Stawka niepotwierdzona: ${R.niepotw}</div>` : ''}
     ${R.bezStawki ? `<div class="info">Brak stawki doradcy u ${R.bezStawki} ${R.bezStawki === 1 ? 'klienta' : 'klientów'} z kredytem, więc nie liczą się do sumy. ${DS().kto} wpisuje stawkę w karcie klienta.</div>` : ''}
     ${R.L.length ? `<table class="rap-tab"><tbody>${R.L.map(k => `<tr><td>${dataPL(k.data)}</td><td><b>${esc(k.klient)}</b><div class="small muted">${esc(k.nieruchomosc)}${k.nieruchomosc ? ' · ' : ''}${esc(etap(k))}${k.bank ? ' · ' + esc(k.bank) : ''}${k.kwota ? ' · ' + zl(k.kwota) : ''}${k.prowizja_rm ? ' · ' + procTxt(k.prowizja_rm) + (k.stawka_potw ? ' ✓' : ' (niepotw.)') : ''}${brakKontaktu(k) ? ' · ⏱ bez kontaktu' : ''}</div></td><td class="r">${dlaRM(k) ? zl(dlaRM(k)) : ''}<div class="small muted">${postep(k).proc}%</div></td></tr>`).join('')}</tbody>
-      <tfoot><tr><td></td><td>Razem dla RM</td><td class="r">${zl(R.rm)}</td></tr></tfoot></table>` : '<div class="pusto">W tym okresie nie ma przekazanych klientów.</div>'}
+      <tfoot><tr><td></td><td>Razem faktury RM</td><td class="r">${zl(R.rm)}</td></tr></tfoot></table>` : '<div class="pusto">W tym okresie nie ma przekazanych klientów.</div>'}
     <button class="btn btn-main" data-akcja="rap-druk"${pusto}>🖨️ Drukuj albo zapisz PDF</button>
     <button class="btn btn-ghost" data-akcja="rap-csv"${pusto}>📊 Pobierz do Excela</button>
     <button class="btn btn-ghost" data-akcja="rap-kopiuj"${pusto}>📋 Kopiuj do maila lub SMS</button>
@@ -573,8 +579,8 @@ function drukujRaport() {
   const el = $('#druk'); el.className = 'raport';
   el.innerHTML = `<div class="druk-glowa"><img src="logo.png" alt=""><h1>Klienci przekazani: ${esc(DS().kto)}</h1></div>
     <div>Okres: <b>${esc(R.z.opis)}</b> · stan na ${dataPL(dzis())}</div>
-    <div class="druk-podsum"><div><b>${R.L.length}</b>klientów</div><div><b>${R.ileKredytow}</b>z udzielonym kredytem</div><div><b>${zl(R.sumaKredytow)}</b>kwota kredytów</div><div><b>${zl(R.nat)}</b>prowizja doradcy</div><div><b>${zl(R.rm)}</b>dla RM (${udzTxt(DS())})</div></div>
-    <table><thead><tr><th>Lp.</th><th>Przekazany</th><th>Klient</th><th>Telefon</th><th>Nieruchomość</th><th>Kontakt</th><th>Etap</th><th>Bank</th><th class="r">Kwota</th><th class="r">Stawka</th><th class="r">Prow. doradcy</th><th class="r">Dla RM</th><th>Termin aktu</th><th class="r">Postęp</th></tr></thead>
+    <div class="druk-podsum"><div><b>${R.L.length}</b>klientów</div><div><b>${R.ileKredytow}</b>z udzielonym kredytem</div><div><b>${zl(R.sumaKredytow)}</b>kwota kredytów</div><div><b>${zl(R.nat)}</b>prowizja doradcy</div><div><b>${zl(R.rm)}</b>faktura RM (${udzTxt(DS())})</div></div>
+    <table><thead><tr><th>Lp.</th><th>Przekazany</th><th>Klient</th><th>Telefon</th><th>Nieruchomość</th><th>Kontakt</th><th>Etap</th><th>Bank</th><th class="r">Kwota</th><th class="r">Stawka</th><th class="r">Prow. doradcy</th><th class="r">Faktura RM</th><th>Termin aktu</th><th class="r">Postęp</th></tr></thead>
     <tbody>${R.L.map((k, i) => `<tr><td>${i + 1}</td><td>${dataPL(k.data)}</td><td>${esc(k.klient)}</td><td>${esc(k.telefon)}</td><td>${esc(k.nieruchomosc)}</td>
       <td>${k.kontakt ? dataPL(k.kontakt) : brakKontaktu(k) ? 'brak' : ''}</td><td>${esc(etap(k))}</td><td>${esc(k.bank || '')}</td>
       <td class="r">${k.kwota ? zl(k.kwota) : ''}</td><td class="r">${k.prowizja_rm ? procTxt(k.prowizja_rm) + (k.stawka_potw ? ' ✓' : ' ?') : ''}</td>
@@ -587,7 +593,7 @@ function csvRaport() {
   const R = daneRaportu(), q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const kw = (n) => n ? String(Math.round(Number(n) * 100) / 100).replace('.', ',') : '';
   const wiersze = [['Lp.', 'Data przekazania', 'Klient', 'Telefon', 'Nieruchomość', 'Zdolność', 'Pierwszy kontakt', 'Wniosek', 'Decyzja', 'Umowa kredytowa', 'Etap', 'Bank', 'Kredyt',
-      'Kwota kredytu', 'Stawka doradcy %', 'Stawka potwierdzona', 'Prowizja doradcy', 'Dla RM', 'Termin aktu', 'Zamknięcie', 'Postęp %', 'Notatka'],
+      'Kwota kredytu', 'Stawka doradcy %', 'Stawka potwierdzona', 'Prowizja doradcy', 'Faktura RM', 'Termin aktu', 'Zamknięcie', 'Postęp %', 'Notatka'],
     ...R.L.map((k, i) => [i + 1, dataPL(k.data), k.klient, k.telefon, k.nieruchomosc, zdolnoscTxt(k), dataPL(k.kontakt), dataPL(k.wniosek), dataPL(k.decyzja), dataPL(k.umowa), etap(k), k.bank,
       kredytTxt(k), kw(k.kwota), kw(k.prowizja_rm), k.prowizja_rm ? (k.stawka_potw ? 'tak ' + dataPL(k.stawka_potw_kiedy) : 'nie') : '', kw(prowDoradcy(k)), kw(dlaRM(k)),
       dataPL(k.akt), dataPL(k.zamkniecie), postep(k).proc, k.notatka]),
@@ -599,8 +605,8 @@ function csvRaport() {
 async function kopiujRaport() {
   const R = daneRaportu();
   const t = [`Klienci przekazani przez RM dla ${DS().kogo}, ${R.z.opis}:`,
-    ...R.L.map((k, i) => `${i + 1}. ${dataPL(k.data)} ${k.klient}${k.nieruchomosc ? ', ' + k.nieruchomosc : ''}${k.kwota ? ', kredyt ' + zl(k.kwota) : ''}, etap: ${etap(k)}${k.bank ? ' (' + k.bank + ')' : ''}${k.prowizja_rm ? ', stawka ' + procTxt(k.prowizja_rm) : ''}${dlaRM(k) ? ', dla RM ' + zl(dlaRM(k)) : ''}, postęp ${postep(k).proc}%`),
-    '', `Razem: ${R.L.length} klientów, kredyty ${zl(R.sumaKredytow)}, ${DS().udzial ? `dla RM (${udzTxt(DS())} prowizji) ${zl(R.rm)}` : 'udział RM do ustalenia'}.`].join('\n');
+    ...R.L.map((k, i) => `${i + 1}. ${dataPL(k.data)} ${k.klient}${k.nieruchomosc ? ', ' + k.nieruchomosc : ''}${k.kwota ? ', kredyt ' + zl(k.kwota) : ''}, etap: ${etap(k)}${k.bank ? ' (' + k.bank + ')' : ''}${k.prowizja_rm ? ', stawka ' + procTxt(k.prowizja_rm) : ''}${dlaRM(k) ? ', faktura RM ' + zl(dlaRM(k)) : ''}, postęp ${postep(k).proc}%`),
+    '', `Razem: ${R.L.length} klientów, kredyty ${zl(R.sumaKredytow)}, ${DS().udzial ? `faktury RM (${udzTxt(DS())} prowizji) ${zl(R.rm)}` : 'udział RM do ustalenia'}.`].join('\n');
   try { await navigator.clipboard.writeText(t); toast('Skopiowane, wklej w maila lub SMS'); } catch (e) { toast('Nie udało się skopiować', 4000); }
 }
 $('#btn-raport').addEventListener('click', (e) => {
