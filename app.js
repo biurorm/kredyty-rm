@@ -1,7 +1,7 @@
 // KREDYTY RM: klienci przekazani przez RM doradcom kredytowym (od v4 osobno Natalia i Jarek) + raport do druku/Excela
 // oraz kampanie reklamowe na kredyt (miejsce, zdjęcie, termin, budżet, zapytania).
 // Dane w bazie Zadań RM (Supabase, to samo logowanie). Bez config.js albo z ?proba: tryb próbny w tej przeglądarce.
-const WERSJA = 'v9';
+const WERSJA = 'v10';
 
 // rozliczenie: RM dostaje udział w prowizji doradcy; stawkę (np. 1,5 / 2 / 3% kwoty kredytu) podaje doradca.
 // Stawka w % siedzi w kolumnie prowizja_rm. Natalia: podział 50/50 uzyskanej prowizji (ustalone 19.11, potwierdzone 22.11.2026), Jarek: warunki do wpisania (null = nie liczymy).
@@ -173,7 +173,7 @@ const cfg = window.RM_CONFIG || {};
 const DB = (cfg.supabaseUrl && !/[?&]proba/.test(location.search)) ? magazynSupabase(cfg) : magazynProbny();
 
 // ===================== STAN =====================
-const S = { user: null, profil: null, osoby: [], klienci: [], kampanie: [], filtr: 'w_toku', doradca: 'Natalia', okres: 'miesiac', rapOd: '', rapDo: '', szukaj: '', filtrKamp: '', otwarty: null, f: null, urle: {} };
+const S = { rokZ: null, miesZ: null, user: null, profil: null, osoby: [], klienci: [], kampanie: [], filtr: 'w_toku', doradca: 'Natalia', okres: 'miesiac', rapOd: '', rapDo: '', szukaj: '', filtrKamp: '', otwarty: null, f: null, urle: {} };
 const rola = () => S.profil?.rola;
 const admin = () => rola() === 'admin';
 const mogeKampanie = () => ['admin', 'asystentka', 'doradca'].includes(rola());
@@ -226,7 +226,7 @@ async function poZalogowaniu({ user, profil }) {
   $('#fab-kampania').hidden = !mogeKampanie();
   let t = 'klienci'; try { t = localStorage.getItem('kr-zakladka') || t; S.doradca = DORADCY[localStorage.getItem('kr-doradca')] ? localStorage.getItem('kr-doradca') : 'Natalia'; } catch (e) {}
   await odswiez();
-  pokazZakladke(t === 'kampanie' ? 'kampanie' : 'klienci');
+  pokazZakladke(['kampanie', 'zakonczone'].includes(t) ? t : 'klienci');
   DB.nasluchuj(() => odswiez());
   document.addEventListener('visibilitychange', () => { if (!document.hidden) odswiez(); });
 }
@@ -244,6 +244,7 @@ function rysuj() {
   if (!$('#arkusz').hidden) return; // nie przerywamy wpisywania w karcie
   if (zakladka === 'klienci') rysujKlientow();
   if (zakladka === 'kampanie') rysujKampanie();
+  if (zakladka === 'zakonczone') rysujZakonczone();
 }
 
 // ===================== ZAKŁADKI =====================
@@ -429,6 +430,45 @@ function rozliczenie() {
     : szac ? `Szacunek, gdy kredyt zostanie udzielony: prowizja ${d.kogo} ${zl(szac)} (${procTxt(p.prowizja_rm)}), podział ${podzTxt(d)}: ${pol(szac)}`
     : `Rozliczenie ${podzTxt(d)}: uzyskaną prowizję ${d.kogo} dzielimy po połowie, RM i ${d.kto}. Kwota policzy się po wpisaniu kwoty kredytu i stawki.`;
 }
+
+// ===================== ZAKOŃCZONE: podział na miesiące (wg daty zamknięcia) =====================
+function rysujZakonczone() {
+  const md = mojDoradca(); if (md) S.doradca = md;
+  $('#doradcy-z').innerHTML = md ? '' : Object.values(DORADCY).map(d => `<button class="chip${S.doradca === d.kto ? ' on' : ''}" data-doradca="${d.kto}">💼 ${d.kto}</button>`).join('');
+  const Z = mojiKlienci().filter(zamkniety);
+  const lata = [...new Set([dzis().slice(0, 4), ...Z.map(k => k.zamkniecie.slice(0, 4))])].sort().reverse();
+  if (!lata.includes(S.rokZ)) S.rokZ = lata[0];
+  $('#lata-z').innerHTML = lata.map(r => `<button class="chip${S.rokZ === r ? ' on' : ''}" data-rok="${r}">${r} · ${Z.filter(k => k.zamkniecie.startsWith(r)).length}</button>`).join('');
+  const R = Z.filter(k => k.zamkniecie.startsWith(S.rokZ));
+  const sum = (L) => ({ n: L.length, kr: L.filter(k => k.kredyt === 'Tak').length, kw: L.filter(k => k.kredyt === 'Tak').reduce((s, k) => s + Number(k.kwota || 0), 0), rm: L.reduce((s, k) => s + dlaRM(k), 0) });
+  const C = sum(R);
+  $('#zak-kafle').innerHTML = `<div class="kafle kafle4">
+    <div class="kafel"><b>${C.n}</b><span>zamknięte ${S.rokZ}</span></div>
+    <div class="kafel"><b>${C.kr}</b><span>z kredytem</span></div>
+    <div class="kafel"><b>${zl(C.kw)}</b><span>kwota kredytów</span></div>
+    <div class="kafel"><b>${zl(C.rm)}</b><span>faktury RM</span></div></div>`;
+  const ost = S.rokZ === dzis().slice(0, 4) ? Number(dzis().slice(5, 7)) : 12;
+  const wiersze = MIES.map((nazwa, i) => {
+    const mm = String(i + 1).padStart(2, '0'), L = R.filter(k => k.zamkniecie.slice(5, 7) === mm), s = sum(L);
+    if (i + 1 > ost && !L.length) return '';
+    const otw = S.miesZ === S.rokZ + mm && L.length;
+    return `<tr class="mies${L.length ? ' klik' : ' pusty'}${otw ? ' otw' : ''}" data-mies="${S.rokZ + mm}"><td>${L.length ? (otw ? '▾' : '▸') : ''} ${nazwa}</td><td class="r">${s.n || '–'}</td><td class="r"><b>${s.kr || '–'}</b></td><td class="r">${s.kw ? zl(s.kw) : '–'}</td><td class="r">${s.rm ? zl(s.rm) : '–'}</td></tr>
+      ${otw ? L.sort((a, b) => a.zamkniecie.localeCompare(b.zamkniecie)).map(k => `<tr class="mies-kl" data-klient="${k.id}"><td colspan="5"><b>${esc(k.klient)}</b> · ${dataPL(k.zamkniecie)}<div class="small muted">${esc(k.nieruchomosc)}${k.nieruchomosc ? ' · ' : ''}${esc(kredytNazwa(k.kredyt) || 'kredyt ?')}${k.bank ? ' · ' + esc(k.bank) : ''}${k.kwota ? ' · ' + zl(k.kwota) : ''}${dlaRM(k) ? ' · 🧾 ' + zl(dlaRM(k)) : ''}</div></td></tr>`).join('') : ''}`;
+  }).join('');
+  $('#zak-tabela').innerHTML = `<table class="rap-tab mies-tab"><thead><tr><th>Miesiąc</th><th class="r">Zamkn.</th><th class="r">Kredyty</th><th class="r">Kwota</th><th class="r">Faktura RM</th></tr></thead>
+    <tbody>${wiersze}</tbody><tfoot><tr><td>Razem ${S.rokZ}</td><td class="r">${C.n}</td><td class="r">${C.kr}</td><td class="r">${zl(C.kw)}</td><td class="r">${zl(C.rm)}</td></tr></tfoot></table>
+    <p class="small muted">Miesiąc liczy się po dacie zamknięcia. „Kredyty” = zamknięte z kredytem otrzymanym. Kliknij miesiąc, żeby zobaczyć klientów.</p>`;
+}
+$('#doradcy-z').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-doradca]'); if (!b) return;
+  S.doradca = b.dataset.doradca; try { localStorage.setItem('kr-doradca', S.doradca); } catch (er) {}
+  rysujZakonczone();
+});
+$('#lata-z').addEventListener('click', (e) => { const b = e.target.closest('[data-rok]'); if (b) { S.rokZ = b.dataset.rok; S.miesZ = null; rysujZakonczone(); } });
+$('#zak-tabela').addEventListener('click', (e) => {
+  const kl = e.target.closest('[data-klient]'); if (kl) { otworzKlienta(S.klienci.find(k => k.id === kl.dataset.klient)); return; }
+  const m = e.target.closest('tr.klik'); if (m) { S.miesZ = S.miesZ === m.dataset.mies ? null : m.dataset.mies; rysujZakonczone(); }
+});
 
 // ===================== KAMPANIE =====================
 function rysujKampanie() {
