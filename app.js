@@ -1,7 +1,7 @@
 // KREDYTY RM: klienci przekazani przez RM doradcom kredytowym (od v4 osobno Natalia i Jarek) + raport do druku/Excela
 // oraz kampanie reklamowe na kredyt (miejsce, zdjęcie, termin, budżet, zapytania).
 // Dane w bazie Zadań RM (Supabase, to samo logowanie). Bez config.js albo z ?proba: tryb próbny w tej przeglądarce.
-const WERSJA = 'v10';
+const WERSJA = 'v11';
 
 // rozliczenie: RM dostaje udział w prowizji doradcy; stawkę (np. 1,5 / 2 / 3% kwoty kredytu) podaje doradca.
 // Stawka w % siedzi w kolumnie prowizja_rm. Natalia: podział 50/50 uzyskanej prowizji (ustalone 19.11, potwierdzone 22.11.2026), Jarek: warunki do wpisania (null = nie liczymy).
@@ -279,15 +279,15 @@ function rysujKlientow() {
   </div>
   <div class="small muted srodek">${DS().udzial ? `Podział ${podzTxt(DS())} prowizji ${DS().kogo}` : `Udział RM u ${DS().kogo} do ustalenia`}${bezKontaktu ? ` · <b class="czerwony-txt">bez kontaktu ${DS().kogo}: ${bezKontaktu}</b>` : ''}${niepotw ? ` · stawka niepotwierdzona: ${niepotw}` : ''}</div>`;
 
-  const ile = (f) => K.filter(f).length;
-  $('#klienci-filtry').innerHTML = [['w_toku', 'W toku', k => !zamkniety(k)], ['zamkniete', 'Zamknięte', zamkniety], ['wszystkie', 'Wszyscy', () => true]]
-    .map(([k, n, f]) => `<button class="chip${S.filtr === k ? ' on' : ''}" data-filtr="${k}">${n} · ${ile(f)}</button>`).join('');
-
+  // od v11 na liście tylko klienci w toku; po wpisaniu daty zamknięcia klient przechodzi do zakładki Zakończone
   const q = bezOgonkow(S.szukaj);
-  const lista = K.filter(k => S.filtr === 'wszystkie' || (S.filtr === 'zamkniete') === zamkniety(k))
-    .filter(k => !q || bezOgonkow(`${k.klient} ${k.nieruchomosc} ${k.notatka} ${k.bank || ''}`).includes(q))
-    .sort((a, b) => S.filtr === 'zamkniete' ? b.zamkniecie.localeCompare(a.zamkniecie) : a.data.localeCompare(b.data));
-  $('#klienci-lista').innerHTML = lista.length ? lista.map(k => {
+  const zamkLiczba = zamk.length;
+  $('#klienci-filtry').innerHTML = zamkLiczba ? `<button class="chip" data-idz="zakonczone">✅ Zakończone · ${zamkLiczba} →</button>` : '';
+  const lista = wToku.filter(k => !q || bezOgonkow(`${k.klient} ${k.nieruchomosc} ${k.notatka} ${k.bank || ''}`).includes(q))
+    .sort((a, b) => a.data.localeCompare(b.data));
+  $('#klienci-lista').innerHTML = lista.length ? lista.map(kartaKlienta).join('') : `<div class="pusto">${wToku.length ? 'Nic tu nie pasuje.' : K.length ? 'Wszyscy klienci są zakończeni. Nowego dodasz przyciskiem ＋.' : 'Brak klientów. Dodaj pierwszego przyciskiem ＋.'}</div>`;
+}
+function kartaKlienta(k) {
     const zd = k.zdolnosc === 'Tak' ? '<span class="tag ok">zdolność ✓</span>' : k.zdolnosc === 'Nie' ? '<span class="tag zle">brak zdolności</span>' : '<span class="tag">zdolność ?</span>';
     const et = `<span class="tag${bezKredytu(k) ? ' zle' : k.umowa ? ' ok' : ''}">${esc(etap(k))}${k.bank ? ' · ' + esc(k.bank) : ''}${k.kwota ? ' · ' + zl(k.kwota) : ''}</span>`;
     const kont = brakKontaktu(k) ? `<span class="tag zle">⏱ bez kontaktu ${dniOd(k.data)} dni</span>` : '';
@@ -300,7 +300,6 @@ function rysujKlientow() {
       <div class="tagi">${kont}${zd}${et}${pot}${roz}</div>
       <div class="small muted">przekazany ${dataPL(k.data)}${k.akt && !zamkniety(k) ? ` · 📅 termin aktu ${dataPL(k.akt)}` : ''}${zamkniety(k) ? ` · ✅ zamknięcie ${dataPL(k.zamkniecie)}` : ''}</div>
     </button>`;
-  }).join('') : `<div class="pusto">${K.length ? 'Nic tu nie pasuje.' : 'Brak klientów. Dodaj pierwszego przyciskiem ＋.'}</div>`;
 }
 $('#doradcy').addEventListener('click', (e) => {
   const b = e.target.closest('[data-doradca]'); if (!b) return;
@@ -308,9 +307,7 @@ $('#doradcy').addEventListener('click', (e) => {
   rysujKlientow();
 });
 $('#klienci-filtry').addEventListener('click', (e) => {
-  const b = e.target.closest('button'); if (!b) return;
-  if (b.dataset.filtr) S.filtr = b.dataset.filtr;
-  rysujKlientow();
+  const b = e.target.closest('[data-idz]'); if (b) pokazZakladke(b.dataset.idz);
 });
 $('#szukaj').addEventListener('input', (e) => { S.szukaj = e.target.value; rysujKlientow(); });
 $('#klienci-lista').addEventListener('click', (e) => { const b = e.target.closest('[data-klient]'); if (b) otworzKlienta(S.klienci.find(k => k.id === b.dataset.klient)); });
@@ -458,7 +455,10 @@ function rysujZakonczone() {
   $('#zak-tabela').innerHTML = `<table class="rap-tab mies-tab"><thead><tr><th>Miesiąc</th><th class="r">Zamkn.</th><th class="r">Kredyty</th><th class="r">Kwota</th><th class="r">Faktura RM</th></tr></thead>
     <tbody>${wiersze}</tbody><tfoot><tr><td>Razem ${S.rokZ}</td><td class="r">${C.n}</td><td class="r">${C.kr}</td><td class="r">${zl(C.kw)}</td><td class="r">${zl(C.rm)}</td></tr></tfoot></table>
     <p class="small muted">Miesiąc liczy się po dacie zamknięcia. „Kredyty” = zamknięte z kredytem otrzymanym. Kliknij miesiąc, żeby zobaczyć klientów.</p>`;
+  $('#zak-lista').innerHTML = R.length ? `<div class="sekcja-tytul">Klienci zakończeni ${S.rokZ} (${R.length})</div>` + [...R].sort((a, b) => b.zamkniecie.localeCompare(a.zamkniecie)).map(kartaKlienta).join('')
+    : `<div class="pusto">W ${S.rokZ} nie ma jeszcze zakończonych. Klient trafia tu sam po wpisaniu daty w polu „Zamknięcie”.</div>`;
 }
+$('#zak-lista').addEventListener('click', (e) => { const b = e.target.closest('[data-klient]'); if (b) otworzKlienta(S.klienci.find(k => k.id === b.dataset.klient)); });
 $('#doradcy-z').addEventListener('click', (e) => {
   const b = e.target.closest('[data-doradca]'); if (!b) return;
   S.doradca = b.dataset.doradca; try { localStorage.setItem('kr-doradca', S.doradca); } catch (er) {}
@@ -760,7 +760,7 @@ $('#arkusz').addEventListener('submit', async (e) => {
     await DB.zapiszKlienta(r, nowy);
     const i = S.klienci.findIndex(x => x.id === r.id);
     if (i >= 0) S.klienci[i] = { ...S.klienci[i], ...r }; else S.klienci.push({ utworzyl: S.user.id, ...r });
-    toast(r.stawka_potw ? 'Zapisano i potwierdzono ✅' : r.zamkniecie ? 'Zapisano, zamknięcie ✅' : `Zapisano · postęp ${postep(r).proc}%`); zamknijArkusz(); odswiez();
+    toast(r.stawka_potw ? 'Zapisano i potwierdzono ✅' : r.zamkniecie ? 'Zapisano ✅ klient przeszedł do zakładki Zakończone' : `Zapisano · postęp ${postep(r).proc}%`); zamknijArkusz(); odswiez();
   } catch (err) { toast(err.message.startsWith('Wpisz') || err.message.startsWith('Kwoty') || err.message.startsWith('Budżet') ? err.message : 'Nie zapisało się: ' + err.message, 5000); }
   finally { if (btn) btn.disabled = false; }
 });
